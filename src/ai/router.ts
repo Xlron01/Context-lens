@@ -208,7 +208,7 @@ export async function testProvider(
     try {
       const t = Date.now();
       await provider.complete(
-        { system: 'Reply with the single word: ok', user: 'ping', maxTokens: 512 },
+        { system: 'Reply with the single word: ok', user: 'ping', maxTokens: 512, timeoutMs: 45_000 },
         config!,
         model,
       );

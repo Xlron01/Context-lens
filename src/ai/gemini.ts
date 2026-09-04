@@ -20,27 +20,45 @@ export class GeminiProvider implements AIProvider {
   async complete(req: CompletionRequest, config: ProviderConfig, model: string): Promise<CompletionResponse> {
     if (!config.apiKey) throw new ProviderError('Missing Gemini API key', this.id);
     const base = (config.baseUrl?.trim() || BASE).replace(/\/+$/, '');
-    const res = await fetch(
-      `${base}/models/${model}:generateContent?key=${encodeURIComponent(config.apiKey)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: req.system }] },
-          contents: [{ role: 'user', parts: [{ text: req.user }] }],
-          generationConfig: {
-            maxOutputTokens: req.maxTokens ?? 2048,
-            responseMimeType: 'application/json',
-          },
-        }),
-      },
-    );
-    if (!res.ok) {
-      throw new ProviderError(`Gemini API error ${res.status}: ${await res.text()}`, this.id, res.status);
+
+    const read = async (maxTokens: number): Promise<{ raw: string; finish: string }> => {
+      const res = await fetch(
+        `${base}/models/${model}:generateContent?key=${encodeURIComponent(config.apiKey)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(req.timeoutMs ?? 60_000),
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: req.system }] },
+            contents: [{ role: 'user', parts: [{ text: req.user }] }],
+            generationConfig: {
+              maxOutputTokens: maxTokens,
+              responseMimeType: 'application/json',
+            },
+          }),
+        },
+      );
+      if (!res.ok) {
+        throw new ProviderError(`Gemini API error ${res.status}: ${await res.text()}`, this.id, res.status);
+      }
+      const data = await res.json();
+      const candidate = data?.candidates?.[0] ?? {};
+      const raw: string =
+        candidate.content?.parts
+          ?.map((p: { text?: string }) => p.text ?? '')
+          .join('') ?? '';
+      return { raw, finish: candidate.finishReason ?? '' };
+    };
+
+    // MAX_TOKENS with empty content = reasoning burned the budget; retry bigger.
+    let { raw, finish } = await read(req.maxTokens ?? 2048);
+    if (!raw && finish === 'MAX_TOKENS' && (req.maxTokens ?? 2048) < 8192) {
+      ({ raw, finish } = await read(8192));
     }
-    const data = await res.json();
-    const raw: string = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('') ?? '';
-    if (!raw) throw new ProviderError('Empty Gemini response', this.id);
+    if (!raw) {
+      const hint = finish === 'MAX_TOKENS' ? ' — the model exhausted its token budget' : '';
+      throw new ProviderError(`Empty Gemini response from ${model} (finish_reason: ${finish || 'unknown'})${hint}`, this.id);
+    }
     return { raw, provider: this.id, model };
   }
 

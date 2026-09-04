@@ -49,28 +49,46 @@ export class OpenAICompatibleProvider implements AIProvider {
 
   async complete(req: CompletionRequest, config: ProviderConfig, model: string): Promise<CompletionResponse> {
     if (!config.apiKey) throw new ProviderError(`Missing ${this.id} API key`, this.id);
-    const res = await fetch(this.endpointFor(config), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: req.maxTokens ?? 2048,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: `${req.system}\nRespond with a single JSON object.` },
-          { role: 'user', content: req.user },
-        ],
-      }),
-    });
-    if (!res.ok) {
-      throw new ProviderError(`${this.id} API error ${res.status}: ${await res.text()}`, this.id, res.status);
+
+    const read = async (maxTokens: number): Promise<{ raw: string; finish: string }> => {
+      const res = await fetch(this.endpointFor(config), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        signal: AbortSignal.timeout(req.timeoutMs ?? 60_000),
+        body: JSON.stringify({
+          model,
+          max_tokens: maxTokens,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: `${req.system}\nRespond with a single JSON object.` },
+            { role: 'user', content: req.user },
+          ],
+        }),
+      });
+      if (!res.ok) {
+        throw new ProviderError(`${this.id} API error ${res.status}: ${await res.text()}`, this.id, res.status);
+      }
+      const data = await res.json();
+      const choice = data?.choices?.[0] ?? {};
+      // Reasoning models (DeepSeek/Nemotron style) may put everything in
+      // reasoning_content and leave content empty.
+      const raw: string = choice.message?.content || choice.message?.reasoning_content || choice.text || '';
+      return { raw, finish: choice.finish_reason ?? '' };
+    };
+
+    // Reasoning models can burn a small budget "thinking" and return empty
+    // content with finish_reason=length — retry once with a bigger budget.
+    let { raw, finish } = await read(req.maxTokens ?? 2048);
+    if (!raw && finish === 'length' && (req.maxTokens ?? 2048) < 8192) {
+      ({ raw, finish } = await read(8192));
     }
-    const data = await res.json();
-    const raw: string = data?.choices?.[0]?.message?.content ?? '';
-    if (!raw) throw new ProviderError(`Empty ${this.id} response`, this.id);
+    if (!raw) {
+      const hint = finish === 'length' ? ' — the model exhausted its token budget (reasoning model? try another model id)' : '';
+      throw new ProviderError(`Empty ${this.id} response from ${model} (finish_reason: ${finish || 'unknown'})${hint}`, this.id);
+    }
     return { raw, provider: this.id, model };
   }
 

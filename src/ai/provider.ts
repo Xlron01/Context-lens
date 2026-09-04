@@ -13,6 +13,8 @@ export interface CompletionRequest {
   system: string;
   user: string;
   maxTokens?: number;
+  /** Abort the request after this many ms. */
+  timeoutMs?: number;
 }
 
 /** Provider response: raw model text only. Parsing happens in the task layer. */
