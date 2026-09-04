@@ -2,6 +2,7 @@ import { adapterFor } from './adapters';
 import { GenericAdapter } from './adapters/generic';
 import { ContextGraph } from '../core/context-engine/graph';
 import { resolveContext, type ContextPackage } from '../core/context-engine/resolver';
+import { contextPackageJson } from '../ai/prompts';
 import { TASKS, type CaptionStyle, type TaskId } from '../ai/tasks';
 import { createPanel, type PanelUi } from '../ui/panel/panel';
 import type {
@@ -119,6 +120,26 @@ function describeContext(pkg: ContextPackage): string {
 // --- task runner ----------------------------------------------------------
 
 async function startTask(task: TaskId, el: Element | null, selectionText?: string, style?: CaptionStyle): Promise<void> {
+  try {
+    await runTaskInner(task, el, selectionText, style);
+  } catch (err) {
+    // Last-resort guard: no action may ever fail silently.
+    const message = err instanceof Error ? err.message : String(err);
+    try {
+      panel.open('Context Lens');
+      setSteps();
+      panel.renderResult({
+        type: 'TASK_RESULT',
+        ok: false,
+        error: { code: 'PIPELINE_BROKEN', message: `Action handler failed: ${message}` },
+      });
+    } catch {
+      console.error('[Context Lens] panel itself failed:', err);
+    }
+  }
+}
+
+async function runTaskInner(task: TaskId, el: Element | null, selectionText?: string, style?: CaptionStyle): Promise<void> {
   const def = TASKS[task];
   panel.open(`${def.label}`);
 
@@ -134,7 +155,11 @@ async function startTask(task: TaskId, el: Element | null, selectionText?: strin
   if (!built.ok) {
     steps = steps.map((s) => (s.id === 'page' || s.id === 'target' ? { ...s, state: 'failed', detail: built.error } : s));
     setSteps();
-    panel.renderResult({ type: 'TASK_RESULT', ok: false, error: built.error });
+    panel.renderResult({
+      type: 'TASK_RESULT',
+      ok: false,
+      error: { code: 'CONTEXT_NOT_FOUND', message: built.error, retryable: true },
+    });
     return;
   }
   const { pkg, targetLabel } = built;
@@ -175,7 +200,14 @@ async function startTask(task: TaskId, el: Element | null, selectionText?: strin
     if (!response) {
       steps[3] = { ...steps[3], state: 'failed', detail: 'No response from background worker.' };
       setSteps();
-      panel.renderResult({ type: 'TASK_RESULT', ok: false, error: 'Background worker unreachable. Try reloading the extension.' });
+      panel.renderResult({
+        type: 'TASK_RESULT',
+        ok: false,
+        error: {
+          code: 'PIPELINE_BROKEN',
+          message: 'Background worker unreachable. Reload the extension from chrome://extensions.',
+        },
+      });
       return;
     }
     if (response.ok) {
@@ -188,6 +220,8 @@ async function startTask(task: TaskId, el: Element | null, selectionText?: strin
       attachments: pkg.target.attachments.length,
       research: 'Not used',
     } });
+    // Debug: show exactly what the model received.
+    panel.renderContextPackage(contextPackageJson(pkg));
   });
 }
 
@@ -232,6 +266,73 @@ chrome.runtime.onMessage.addListener((msg: BackgroundToContent) => {
   });
 };
 
+// --- deterministic self-test (no AI) ---------------------------------------
+
+async function runSelfTest(): Promise<void> {
+  panel.open('🧪 Pipeline self-test');
+  steps = [
+    { id: 'loaded', label: 'Extension loaded', state: 'active' },
+    { id: 'content', label: 'Content script connected', state: 'pending' },
+    { id: 'background', label: 'Background worker connected', state: 'pending' },
+    { id: 'target', label: 'Target detected', state: 'pending' },
+    { id: 'context', label: 'Context extracted', state: 'pending' },
+    { id: 'providers', label: 'Providers configured', state: 'pending' },
+  ];
+  setSteps();
+  const mark = (id: string, state: 'done' | 'failed', detail?: string) => {
+    steps = steps.map((s) => (s.id === id ? { ...s, state, detail } : s));
+    setSteps();
+  };
+
+  mark('loaded', 'done');
+  mark('content', 'done', adapter.platform);
+
+  // Background round-trip.
+  const pong = await new Promise<boolean>((resolve) => {
+    chrome.runtime.sendMessage({ type: 'PING' }, (resp) => {
+      void chrome.runtime.lastError;
+      resolve(Boolean(resp?.type === 'PONG'));
+    });
+  });
+  mark('background', pong ? 'done' : 'failed', pong ? 'round-trip ok' : 'PING got no PONG — reload the extension');
+
+  // Target + context.
+  const graph = currentGraph();
+  const primary = primaryTargetId();
+  mark('target', primary ? 'done' : 'failed', primary ? `${graph.get(primary)?.type} detected` : 'no post/comment found on this page');
+  if (primary) {
+    const built = buildPackage('understand', document.querySelector(`[data-context-lens-id="${primary}"]`));
+    mark('context', built.ok ? 'done' : 'failed', built.ok ? `${built.pkg.items.length} context item(s), ~${Math.ceil((built.pkg.target.text.length + built.pkg.items.reduce((a, i) => a + i.node.text.length, 0)) / 4)} tokens` : built.error);
+    if (built.ok) panel.renderContextPackage(contextPackageJson(built.pkg));
+  } else {
+    mark('context', 'failed', 'skipped (no target)');
+  }
+
+  // Providers configured (no API call).
+  const stored = await chrome.storage.local.get(['settings']);
+  const keys = (stored.settings as { keys?: Record<string, unknown> } | undefined)?.keys ?? {};
+  const configured = Object.keys(keys).filter((k) => keys[k]);
+  mark('providers', configured.length > 0 ? 'done' : 'failed', configured.length > 0 ? configured.join(', ') : 'add a key in Settings — tasks will fail with NO_PROVIDER');
+
+  panel.renderResult({
+    type: 'TASK_RESULT',
+    ok: true,
+    headline: pong && primary && configured.length > 0 ? 'Pipeline healthy ✓' : 'Pipeline issues found ✗',
+    sections: [
+      {
+        title: 'What this means',
+        body:
+          pong && primary
+            ? configured.length > 0
+              ? 'The full click → context → background → AI pipeline is wired. Try Understand on a real post now.'
+              : 'The pipeline works up to the AI call. Add an API key in Settings to complete it.'
+            : 'The pipeline is broken at the marked step. Reload the extension, refresh the page, and re-run this test.',
+        confidence: 'observed',
+      },
+    ],
+  });
+}
+
 // --- popup bridge ----------------------------------------------------------
 
 function primaryTargetId(): string | null {
@@ -262,11 +363,22 @@ function describePage(): PageInfoMessage {
 chrome.runtime.onMessage.addListener((msg: { type: string; task?: TaskId; action?: string }, _s, sendResponse) => {
   if (msg.type === 'DESCRIBE_PAGE') {
     sendResponse(describePage());
+  } else if (msg.type === 'SELFTEST') {
+    void runSelfTest();
   } else if (msg.type === 'RUN_FROM_POPUP' && msg.task) {
     const id = primaryTargetId();
     if (!id) {
       panel.open('Context Lens');
-      panel.renderResult({ type: 'TASK_RESULT', ok: false, error: 'Could not identify a post on this page. Scroll a bit and retry, or click a specific post.' });
+      setSteps();
+      panel.renderResult({
+        type: 'TASK_RESULT',
+        ok: false,
+        error: {
+          code: 'CONTEXT_NOT_FOUND',
+          message: 'Could not identify a post on this page. Scroll a bit and retry, or click a specific post.',
+          retryable: true,
+        },
+      });
     } else {
       const el = document.querySelector(`[data-context-lens-id="${id}"]`);
       void startTask(msg.task, el);
@@ -393,7 +505,12 @@ function showMenu(x: number, y: number, targetEl: Element | null, selectionText:
   }
   shadow.append(menu);
   document.documentElement.append(fresh);
-  positionHost(fresh, x, y);
+  // .menu is position:fixed — position it explicitly in viewport coords.
+  const menuEl = shadow.querySelector('.menu') as HTMLElement;
+  menuEl.style.left = `${Math.max(4, Math.min(x, window.innerWidth - 276))}px`;
+  menuEl.style.top = `${Math.max(4, Math.min(y, window.innerHeight - 320))}px`;
+  const host = fresh as HTMLElement & { style: CSSStyleDeclaration };
+  void host;
   setTimeout(() => {
     const dismiss = (e: MouseEvent) => {
       if (!fresh.shadowRoot!.querySelector('.menu')?.contains(e.target as Node) && e.target !== fresh) {
