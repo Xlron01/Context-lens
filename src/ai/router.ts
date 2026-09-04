@@ -55,12 +55,23 @@ export function toLensError(err: unknown): LensError {
     let code: LensError['code'] = 'PROVIDER_FAILED';
     if (err.status === 401 || err.status === 403) code = 'PROVIDER_AUTH';
     else if (err.status === 429) code = 'PROVIDER_RATE_LIMIT';
-    else if ((err.status ?? 0) >= 500 || err.status === 404) code = 'PROVIDER_UNAVAILABLE';
+    else if ((err.status ?? 0) >= 500 || err.status === 404 || err.status === 410) code = 'PROVIDER_UNAVAILABLE';
+
+    let message = summarizeError(err.message);
+    if (code === 'PROVIDER_UNAVAILABLE') {
+      const modelMatch = err.message.match(/model '([^']+)'/i);
+      if (modelMatch) {
+        message = `Model '${modelMatch[1]}' is not in this provider's catalog. Use "Fetch model list" in Settings or copy an id from the catalog link.`;
+      } else if (err.status === 410) {
+        message = `This model was retired by the provider. Use "Fetch model list" in Settings to pick a current one.`;
+      }
+    }
+
     return {
       code,
-      message: summarizeError(err.message),
+      message,
       provider: err.providerId,
-      retryable: code !== 'PROVIDER_AUTH',
+      retryable: code !== 'PROVIDER_AUTH' && code !== 'PROVIDER_UNAVAILABLE',
     };
   }
   const msg = err instanceof Error ? err.message : String(err);
@@ -72,11 +83,28 @@ export function toLensError(err: unknown): LensError {
 export function summarizeError(msg: string): string {
   const statusMatch = msg.match(/error (\d{3})/);
   const status = statusMatch ? statusMatch[1] : undefined;
+  // Prefer the human-readable field from a JSON error body.
+  const jsonStart = msg.indexOf('{');
+  if (jsonStart >= 0) {
+    try {
+      const body = JSON.parse(msg.slice(jsonStart)) as {
+        detail?: unknown;
+        title?: unknown;
+        message?: unknown;
+        error?: { message?: unknown };
+      };
+      const detail = body.detail ?? body.error?.message ?? body.message ?? body.title;
+      if (detail) msg = `${status ? `${status}: ` : ''}${String(detail)}`;
+    } catch {
+      // not JSON — keep raw
+    }
+  }
   if (status === '429') return 'Rate limit reached';
   if (status === '401' || status === '403') return 'Invalid API key';
-  if (status === '404') return 'Model unavailable';
+  if (status === '404') return 'Model or endpoint not found';
+  if (status === '410') return 'Model retired (Gone)';
   if (status && /^5\d\d$/.test(status)) return 'Provider server error';
-  return msg.length > 120 ? `${msg.slice(0, 120)}…` : msg;
+  return msg.length > 160 ? `${msg.slice(0, 160)}…` : msg;
 }
 
 function pickModel(task: TaskId, provider: AIProvider, mode: AiMode, config?: ProviderConfig): string {
@@ -149,23 +177,46 @@ function nextConfigured(currentId: string, settings: Settings): string | undefin
   return undefined;
 }
 
-/** Quick ping to measure provider health for the Settings view. */
-export async function testProvider(id: string, settings: Settings): Promise<{ ok: boolean; ms: number; error?: string }> {
+/** Quick ping to measure provider health for the Settings view. Tests both deep and fast models. */
+export async function testProvider(
+  id: string,
+  settings: Settings,
+): Promise<{ ok: boolean; ms: number; error?: string; detail?: string }> {
   const provider = registry[id];
   const config = settings.keys[id];
   if (!provider || !provider.isConfigured(config ?? {})) return { ok: false, ms: 0, error: 'Not configured' };
-  const start = Date.now();
-  try {
-    await provider.complete(
-      { system: 'Reply with the single word: ok', user: 'ping', maxTokens: 512 },
-      config!,
-      pickModel('understand', provider, 'fast', config),
-    );
-    return { ok: true, ms: Date.now() - start };
-  } catch (err) {
-    const lensErr = toLensError(err);
-    return { ok: false, ms: Date.now() - start, error: lensErr.message };
+
+  const deep = pickModel('thread', provider, 'deep', config);
+  const fast = pickModel('understand', provider, 'fast', config);
+  const toTest: [string, string][] = deep === fast ? [['model', deep]] : [['deep', deep], ['fast', fast]];
+
+  const t0 = Date.now();
+  const parts: string[] = [];
+  let allOk = true;
+  let firstError: string | undefined;
+
+  for (const [label, model] of toTest) {
+    try {
+      const t = Date.now();
+      await provider.complete(
+        { system: 'Reply with the single word: ok', user: 'ping', maxTokens: 512 },
+        config!,
+        model,
+      );
+      parts.push(`${label} ✓ ${Date.now() - t} ms`);
+    } catch (err) {
+      allOk = false;
+      const e = toLensError(err);
+      parts.push(`${label} ✗ ${e.message}`);
+      firstError ??= e.message;
+    }
   }
+
+  return { ok: allOk, ms: Date.now() - t0, error: firstError, detail: parts.join(' · ') };
+}
+
+export function getProvider(id: string): AIProvider | undefined {
+  return registry[id];
 }
 
 export function providerIds(): string[] {
@@ -203,16 +254,16 @@ export const PROVIDER_INFO: ProviderInfo[] = [
     id: 'nvidia',
     label: 'NVIDIA NIM',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
-    defaultModel: 'meta/llama-3.3-70b-instruct',
-    fastModel: 'meta/llama-3.1-8b-instruct',
+    defaultModel: 'nvidia/nemotron-3-ultra-550b-a55b',
+    fastModel: 'nvidia/nemotron-3.5-lightning-30b-a3b',
     docsUrl: 'https://build.nvidia.com/explore',
   },
   {
     id: 'openrouter',
     label: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
-    defaultModel: 'google/gemini-2.0-flash-exp:free',
-    fastModel: 'google/gemini-2.0-flash-exp:free',
+    defaultModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+    fastModel: 'nvidia/nemotron-3.5-lightning:free',
     docsUrl: 'https://openrouter.ai/models?max_price=0',
   },
 ];

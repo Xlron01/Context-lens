@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseTaskResult } from '../src/ai/results';
-import { toLensError } from '../src/ai/router';
+import { toLensError, summarizeError } from '../src/ai/router';
 import { ProviderError } from '../src/ai/provider';
 import { MASTER_SYSTEM_PROMPT } from '../src/ai/system-prompt';
 import { taskInstruction } from '../src/ai/task-prompts';
@@ -68,6 +68,19 @@ describe('toLensError', () => {
     const e = toLensError(new ProviderError('Groq API error 429: rate limit', 'groq', 429));
     expect(e.code).toBe('PROVIDER_RATE_LIMIT');
     expect(e.retryable).toBe(true);
+  });
+
+  it('maps retired-model 410 to a helpful message naming the model', () => {
+    const raw = `nvidia API error 410: {"type":"about:blank","title":"Gone","status":410,"detail":"The model 'meta/llama-3.1-8b-instruct' has been retired"}`;
+    const e = toLensError(new ProviderError(raw, 'nvidia', 410));
+    expect(e.code).toBe('PROVIDER_UNAVAILABLE');
+    expect(e.message).toContain('meta/llama-3.1-8b-instruct');
+    expect(e.message).toContain('Fetch model list');
+  });
+
+  it('summarizeError prefers the JSON detail field', () => {
+    const s = summarizeError('nvidia API error 410: {"title":"Gone","detail":"The model was removed"}');
+    expect(s).toContain('The model was removed');
   });
 });
 

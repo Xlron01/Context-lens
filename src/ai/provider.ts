@@ -29,6 +29,8 @@ export interface AIProvider {
   readonly fastModel: string;
   isConfigured(config: ProviderConfig): boolean;
   complete(req: CompletionRequest, config: ProviderConfig, model: string): Promise<CompletionResponse>;
+  /** Current model catalog from the provider, for the Settings picker. */
+  listModels(config: ProviderConfig): Promise<string[]>;
 }
 
 export class ProviderError extends Error {

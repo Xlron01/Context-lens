@@ -94,7 +94,20 @@ export interface TestProvidersMessage {
 
 export interface ProviderHealthMessage {
   type: 'PROVIDER_HEALTH';
-  results: { id: string; ok: boolean; ms: number; error?: string }[];
+  results: { id: string; ok: boolean; ms: number; error?: string; detail?: string }[];
+}
+
+/** Popup → background: fetch the provider's live model catalog. */
+export interface FetchModelsMessage {
+  type: 'FETCH_MODELS';
+  providerId: string;
+}
+
+export interface ModelListMessage {
+  type: 'MODEL_LIST';
+  providerId: string;
+  models: string[];
+  error?: LensError;
 }
 
 export type ContentToBackground = RunTaskMessage | TestProvidersMessage | DescribePageMessage | RunFromPopupMessage;

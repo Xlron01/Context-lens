@@ -73,13 +73,31 @@ export class OpenAICompatibleProvider implements AIProvider {
     if (!raw) throw new ProviderError(`Empty ${this.id} response`, this.id);
     return { raw, provider: this.id, model };
   }
+
+  async listModels(config: ProviderConfig): Promise<string[]> {
+    const base = (config.baseUrl?.trim() || this.defaultBaseUrl).replace(/\/+$/, '');
+    const root = base.endsWith('/chat/completions') ? base.replace(/\/chat\/completions$/, '') : base;
+    const headers: Record<string, string> = {};
+    if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
+    const res = await fetch(`${root}/models`, { headers });
+    if (!res.ok) {
+      throw new ProviderError(`${this.id} models error ${res.status}: ${await res.text()}`, this.id, res.status);
+    }
+    const data = await res.json();
+    return ((data?.data ?? []) as { id?: string }[])
+      .map((m) => m.id ?? '')
+      .filter(Boolean)
+      .sort();
+  }
 }
 
 export const NvidiaProvider = new OpenAICompatibleProvider({
   id: 'nvidia',
   baseUrl: 'https://integrate.api.nvidia.com/v1',
-  defaultModel: 'meta/llama-3.3-70b-instruct',
-  fastModel: 'meta/llama-3.1-8b-instruct',
+  // Verified against build.nvidia.com's live catalog (2026-09); users can
+  // always override or re-fetch via "Fetch model list".
+  defaultModel: 'nvidia/nemotron-3-ultra-550b-a55b',
+  fastModel: 'nvidia/nemotron-3.5-lightning-30b-a3b',
   docsUrl: 'https://build.nvidia.com/explore',
 });
 
@@ -94,7 +112,7 @@ export const GroqProvider = new OpenAICompatibleProvider({
 export const OpenRouterProvider = new OpenAICompatibleProvider({
   id: 'openrouter',
   baseUrl: 'https://openrouter.ai/api/v1',
-  defaultModel: 'google/gemini-2.0-flash-exp:free',
-  fastModel: 'google/gemini-2.0-flash-exp:free',
+  defaultModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+  fastModel: 'nvidia/nemotron-3.5-lightning:free',
   docsUrl: 'https://openrouter.ai/models?max_price=0',
 });

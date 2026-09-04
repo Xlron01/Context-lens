@@ -43,4 +43,18 @@ export class GeminiProvider implements AIProvider {
     if (!raw) throw new ProviderError('Empty Gemini response', this.id);
     return { raw, provider: this.id, model };
   }
+
+  async listModels(config: ProviderConfig): Promise<string[]> {
+    const base = (config.baseUrl?.trim() || BASE).replace(/\/+$/, '');
+    const keyParam = config.apiKey ? `?key=${encodeURIComponent(config.apiKey)}` : '';
+    const res = await fetch(`${base}/models${keyParam}`);
+    if (!res.ok) {
+      throw new ProviderError(`Gemini models error ${res.status}: ${await res.text()}`, this.id, res.status);
+    }
+    const data = await res.json();
+    return ((data?.models ?? []) as { name?: string }[])
+      .map((m) => (m.name ?? '').replace(/^models\//, ''))
+      .filter(Boolean)
+      .sort();
+  }
 }

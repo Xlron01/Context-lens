@@ -1,4 +1,4 @@
-import { runTask, testProvider, DEFAULT_SETTINGS, toLensError, type Settings } from '../ai/router';
+import { runTask, testProvider, getProvider, DEFAULT_SETTINGS, toLensError, type Settings } from '../ai/router';
 import { providerIds } from '../ai/router';
 import type {
   ContentToBackground,
@@ -67,6 +67,25 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender, sendResp
       );
       const resp: ProviderHealthMessage = { type: 'PROVIDER_HEALTH', results };
       sendResponse(resp);
+    })();
+    return true;
+  }
+
+  if ((msg as { type?: string }).type === 'FETCH_MODELS') {
+    (async () => {
+      const { providerId } = msg as unknown as { providerId: string };
+      const settings = await loadSettings();
+      const provider = getProvider(providerId);
+      if (!provider) {
+        sendResponse({ type: 'MODEL_LIST', providerId, models: [], error: { code: 'PIPELINE_BROKEN', message: 'Unknown provider' } });
+        return;
+      }
+      try {
+        const models = await provider.listModels(settings.keys[providerId] ?? {});
+        sendResponse({ type: 'MODEL_LIST', providerId, models });
+      } catch (err) {
+        sendResponse({ type: 'MODEL_LIST', providerId, models: [], error: toLensError(err) });
+      }
     })();
     return true;
   }

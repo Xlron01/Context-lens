@@ -113,12 +113,17 @@ function renderSettings(): void {
         </div>
         <div>
           <label>Model (deep)</label>
-          <input type="text" data-model="${p.id}" placeholder="${escapeHtml(p.defaultModel)}" value="${escapeHtml(cfg.model ?? '')}" />
+          <input type="text" data-model="${p.id}" list="dl-${p.id}" placeholder="${escapeHtml(p.defaultModel)}" value="${escapeHtml(cfg.model ?? '')}" />
         </div>
         <div>
           <label>Model (fast)</label>
-          <input type="text" data-fastmodel="${p.id}" placeholder="${escapeHtml(p.fastModel)}" value="${escapeHtml(cfg.fastModel ?? '')}" />
+          <input type="text" data-fastmodel="${p.id}" list="dl-${p.id}" placeholder="${escapeHtml(p.fastModel)}" value="${escapeHtml(cfg.fastModel ?? '')}" />
         </div>
+      </div>
+      <datalist id="dl-${p.id}"></datalist>
+      <div class="row" style="margin-top:6px">
+        <button class="act" data-fetch="${p.id}" title="Save your key first, then load the provider's live model catalog">↻ Fetch model list</button>
+        <div class="meta" style="flex:1" data-test="${p.id}"></div>
       </div>
       <div class="meta">Key &amp; model ids: <a href="${p.docsUrl}" target="_blank" rel="noreferrer">${p.docsUrl.replace(/^https:\/\//, '')}</a> — leave fields empty to use the defaults.</div>`;
     wrap.append(div);
@@ -189,11 +194,54 @@ $('testBtn').addEventListener('click', async () => {
   for (const r of resp.results) {
     const el = document.querySelector(`[data-status="${r.id}"]`) as HTMLElement | null;
     if (el) {
-      el.textContent = r.ok ? `✓ ${r.ms} ms` : `✗ ${r.error ?? 'failed'}`;
+      el.textContent = r.ok ? '✓ ok' : '✗ failed';
       el.className = `status ${r.ok ? 'ok' : 'err'}`;
     }
+    const detail = document.querySelector(`[data-test="${r.id}"]`) as HTMLElement | null;
+    if (detail) {
+      detail.textContent = r.detail ?? r.error ?? '';
+      detail.style.color = r.ok ? '#7ee2a8' : '#ef9aa8';
+    }
   }
-  ($('testResult') as HTMLElement).textContent = resp.results.every((r) => r.ok) ? 'All good ✓' : '';
+  const failed = resp.results.filter((r) => !r.ok);
+  ($('testResult') as HTMLElement).textContent =
+    resp.results.length === 0
+      ? 'No provider has a key yet.'
+      : failed.length === 0
+        ? 'All good ✓'
+        : `${failed.length}/${resp.results.length} failed — see the detail under each card.`;
+});
+
+// Live model catalog per provider → datalist suggestions for the model inputs.
+document.addEventListener('click', async (e) => {
+  const btn = (e.target as HTMLElement).closest('[data-fetch]') as HTMLElement | null;
+  if (!btn) return;
+  const providerId = btn.dataset.fetch!;
+  const line = document.querySelector(`[data-test="${providerId}"]`) as HTMLElement | null;
+  if (line) {
+    line.textContent = 'Fetching model list…';
+    line.style.color = '#999';
+  }
+  const resp = (await chrome.runtime.sendMessage({ type: 'FETCH_MODELS', providerId })) as {
+    type: string;
+    providerId: string;
+    models: string[];
+    error?: { message: string };
+  };
+  const datalist = document.getElementById(`dl-${providerId}`) as HTMLDataListElement | null;
+  if (!datalist) return;
+  if (resp?.models?.length) {
+    datalist.innerHTML = resp.models.map((m) => `<option value="${escapeHtml(m)}"></option>`).join('');
+    if (line) {
+      line.textContent = `${resp.models.length} models loaded — click a Model field to pick one`;
+      line.style.color = '#7ee2a8';
+    }
+  } else {
+    if (line) {
+      line.textContent = `✗ ${resp?.error?.message ?? 'Could not fetch models'}`;
+      line.style.color = '#ef9aa8';
+    }
+  }
 });
 
 $('openSettings').addEventListener('click', () => {
