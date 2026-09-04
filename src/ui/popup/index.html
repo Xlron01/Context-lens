@@ -3,42 +3,122 @@
   <head>
     <meta charset="utf-8" />
     <style>
-      body { font: 13px system-ui, sans-serif; width: 320px; padding: 12px; color: #222; }
-      h2 { font-size: 15px; margin: 0 0 10px; }
-      label { display: block; margin: 8px 0 3px; font-weight: 600; font-size: 12px; }
-      input[type="password"], input[type="text"] { width: 100%; box-sizing: border-box; padding: 5px 6px; }
-      .hint { font-size: 11px; color: #666; margin: 2px 0 6px; }
-      .status { margin-top: 10px; font-size: 12px; }
-      .ok { color: #1a7f37; } .err { color: #b35900; }
-      button { margin-top: 10px; padding: 5px 12px; }
-      .row { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+      :root { color-scheme: dark; }
+      body { font: 13px/1.45 system-ui, sans-serif; width: 340px; margin: 0; background: #17171c; color: #eee; }
+      header { display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px; }
+      header h1 { font-size: 15px; margin: 0; flex: 1; }
+      header button { background: none; border: none; color: #999; font-size: 16px; cursor: pointer; }
+      header button:hover { color: #fff; }
+
+      .detection { margin: 0 14px 10px; padding: 8px 10px; background: #1f1f27; border-radius: 8px; font-size: 12px; }
+      .detection .line { display: flex; gap: 6px; padding: 1px 0; }
+      .detection .ok { color: #7ee2a8; }
+      .detection .warn { color: #eec37e; }
+      .detection .preview { color: #999; margin-top: 4px; font-style: italic; }
+
+      .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 14px; }
+      .action {
+        background: #26262e; border: 1px solid #33333e; border-radius: 10px;
+        padding: 10px; text-align: left; color: #eee; cursor: pointer;
+      }
+      .action:hover:not(:disabled) { background: #2e2e3a; }
+      .action:disabled { opacity: .4; cursor: default; }
+      .action .emoji { font-size: 16px; }
+      .action .label { font-weight: 600; display: block; margin-top: 2px; }
+      .action .sub { font-size: 11px; color: #999; display: block; }
+      .wide { grid-column: 1 / -1; }
+      .primary {
+        display: block; width: calc(100% - 28px); margin: 10px 14px 4px;
+        background: #4c5bd4; border: none; color: #fff; border-radius: 10px;
+        padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer;
+      }
+      .primary:hover { background: #5a69e0; }
+
+      .status { display: flex; align-items: center; gap: 6px; padding: 10px 14px; font-size: 11px; color: #999; flex-wrap: wrap; }
+      .chip { background: #1f1f27; border-radius: 999px; padding: 2px 8px; }
+      .chip.good { color: #7ee2a8; }
+      .chip.off { color: #777; }
+
+      /* settings view */
+      .settings { display: none; padding: 0 14px 14px; }
+      h2 { font-size: 13px; color: #cfcfda; margin: 12px 0 6px; text-transform: uppercase; letter-spacing: .05em; }
+      label { display: block; margin: 6px 0 2px; font-size: 12px; font-weight: 600; }
+      input[type="password"], input[type="text"], textarea, select {
+        width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 8px;
+        border: 1px solid #33333e; background: #1f1f27; color: #eee; font: inherit;
+      }
+      textarea { resize: vertical; min-height: 48px; }
+      .hint { font-size: 11px; color: #777; margin: 2px 0 4px; }
+      .prov { margin-bottom: 10px; padding: 8px; background: #1f1f27; border-radius: 8px; }
+      .prov .row { display: flex; align-items: center; gap: 6px; }
+      .prov .name { flex: 1; font-weight: 600; }
+      .prov .status { padding: 0; font-size: 11px; }
+      .prov .status.ok { color: #7ee2a8; }
+      .prov .status.err { color: #ef9aa8; }
+      .prov .status.idle { color: #777; }
+      .prov input { margin-top: 6px; }
+      button.act {
+        background: #33333e; color: #eee; border: 1px solid #44444f; border-radius: 8px;
+        padding: 6px 12px; cursor: pointer; font-size: 12px;
+      }
+      button.act:hover { background: #3d3d4a; }
+      .modes { display: flex; gap: 12px; margin: 4px 0; font-size: 12px; }
+      .modes label { font-weight: 400; display: flex; align-items: center; gap: 4px; margin: 0; }
+      .checkboxes label { font-weight: 400; display: flex; align-items: center; gap: 6px; margin: 4px 0; font-size: 12px; }
+      .savebar { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+      .savebar .msg { font-size: 12px; }
+      .savebar .msg.ok { color: #7ee2a8; }
+      .savebar .msg.err { color: #eec37e; }
+      .privacy { font-size: 11px; color: #777; margin-top: 10px; }
+      a.back { color: #999; text-decoration: none; cursor: pointer; font-size: 12px; }
     </style>
   </head>
   <body>
-    <h2>Context Lens</h2>
-    <label for="gemini">Gemini API key</label>
-    <div class="hint">Free tier: aistudio.google.com → Get API key</div>
-    <input type="password" id="gemini" placeholder="AIza…" />
-
-    <label for="groq">Groq API key (optional)</label>
-    <div class="hint">Free: console.groq.com</div>
-    <input type="password" id="groq" />
-
-    <label for="nvidia">NVIDIA API key (optional)</label>
-    <div class="hint">Free: build.nvidia.com</div>
-    <input type="password" id="nvidia" />
-
-    <label for="openrouter">OpenRouter API key (optional)</label>
-    <div class="hint">Has free models: openrouter.ai</div>
-    <input type="password" id="openrouter" />
-
-    <div class="row">
-      <input type="checkbox" id="redact" />
-      <label for="redact" style="margin:0; font-weight:400">Redact author handles before sending</label>
+    <div id="launcher">
+      <header>
+        <h1>✨ Context Lens</h1>
+        <button id="openSettings" title="Settings">⚙</button>
+      </header>
+      <div class="detection" id="detection">Looking at this page…</div>
+      <div class="actions" id="actions"></div>
+      <button class="primary" id="analyzeCurrent">🎯 Analyze current post</button>
+      <div class="status" id="status"></div>
     </div>
 
-    <button id="save">Save</button>
-    <div class="status" id="status"></div>
+    <div class="settings" id="settingsView">
+      <header>
+        <a class="back" id="backBtn">← Back</a>
+        <h1 style="text-align:right">⚙ Settings</h1>
+      </header>
+
+      <h2>AI Providers</h2>
+      <div id="providers"></div>
+      <button class="act" id="testBtn">Test providers</button>
+      <span class="hint" id="testResult"></span>
+
+      <h2>AI Mode</h2>
+      <div class="modes" id="modes"></div>
+
+      <h2>Behavior</h2>
+      <div class="checkboxes">
+        <label><input type="checkbox" id="includeParent" /> Include parent comment in context</label>
+        <label><input type="checkbox" id="includeReplies" /> Include relevant replies in context</label>
+        <label><input type="checkbox" id="redact" /> Redact author handles before sending</label>
+      </div>
+
+      <h2>Captions</h2>
+      <label for="captionStyle">Default caption style</label>
+      <select id="captionStyle"></select>
+      <label for="styleProfile">My writing style</label>
+      <div class="hint">e.g. "Casual, short, sarcastic, English." — used by "Match my style" captions.</div>
+      <textarea id="styleProfile" placeholder="Casual, short, sarcastic, English."></textarea>
+
+      <div class="savebar">
+        <button class="act" id="save">Save</button>
+        <span class="msg" id="msg"></span>
+      </div>
+      <div class="privacy">🔑 Keys are stored locally in this browser. Nothing is sent anywhere except the AI providers you configure.</div>
+    </div>
 
     <script type="module" src="./popup.ts"></script>
   </body>
