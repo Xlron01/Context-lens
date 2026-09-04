@@ -1,27 +1,37 @@
 # Context Lens
 
-A browser extension that helps you understand posts and comment threads **in context**.
-Select any post/comment on X (Twitter) or Reddit and ask:
+A browser extension that helps you understand posts, comments, and threads **in context** — a lens over the page you're already reading, not another app to learn.
 
-- **Explain this** — what does this mean, in its context?
-- **Who is replying to whom?** — thread structure, points of disagreement, where a misunderstanding started.
+## Interaction model
+
+Four ways in, no workflow to memorize:
+
+1. **Hover** a post or comment → a small ✨ appears → open the action menu
+2. **Select text** → ✨ appears next to the selection → Understand it in place
+3. **Click the extension icon** → Action launcher: "X / Twitter detected ✓ … What do you want to do?"
+4. **Right-click** → Context Lens submenu (fallback)
+
+Every run shows a **visible pipeline** (reading page → found target → built context → asking provider → done/failed with reason). There is no silent state.
+
+Tasks (V0.1): 🧠 Understand · 💬 What do they mean? (intent) · 🧵 Who is replying to whom? (thread) · ✍ Create repost caption (7 styles + "Generate more" + your own style profile). Visible-but-disabled: argument analysis, fact check, discussion, deep research.
 
 ## Architecture
 
 ```
 Content script (page)
-  ├─ Platform Adapters  →  canonical nodes (X / Reddit / generic fallback)
-  ├─ Context Engine     →  graph + resolver + token budgeting (L0→L3)
-  └─ Panel UI (shadow DOM)
+  ├─ Platform Adapters  →  canonical nodes (X / Reddit / YouTube / generic fallback)
+  ├─ Context Engine     →  graph + resolver (task-specific depth) + token budgeting
+  └─ Panel UI (shadow DOM): pipeline status, results, context indicator
         ↓ chrome.runtime message
 Background service worker
-  └─ Model Router  →  Gemini → Groq → NVIDIA → OpenRouter (fallback chain, BYOK)
+  └─ Model Router  →  Gemini → Groq → NVIDIA → OpenRouter
+       (auto fallback with visible per-provider errors, BYOK, AI mode: auto/fast/deep)
 ```
 
 - **Canonical model**: every platform is parsed into `{id, type, text, author, parentId, children, attachments}` — the rest of the system never knows which site it is on.
-- **Context budgeting**: the target is always sent in full; parent, root post, sibling branch, and replies are added in priority order under an ~8k-token budget.
-- **Provider abstraction**: all providers implement one `AIProvider` interface; the router falls through the chain on failure. No model lock-in.
-- **Honesty framing**: results are rendered as *observed* / *inference* / *speculation* sections — the assistant analyzes arguments, not people.
+- **Task-specific context**: caption tasks pay for minimal context (target + root post); understand/intent/thread get the standard package — cost scales with the task.
+- **Context indicator**: every result shows what the AI actually saw (target, context items, attachments, research usage).
+- **Honesty framing**: results render as *observed* / *inference* / *speculation*. Captions never misrepresent the post. Arguments are analyzed, not people.
 
 ## Build & install (Chrome)
 
@@ -36,7 +46,12 @@ npm run build
 
 ## Configure
 
-Click the extension icon → paste at least one API key:
+Click the extension icon → **⚙ Settings**:
+
+- **AI Providers** — paste keys; "Test providers" pings each one and shows latency
+- **AI Mode** — Auto (default) / Fast / Deep
+- **Behavior** — context toggles, redact author handles
+- **Captions** — default style + "My writing style" profile (e.g. "Casual, short, sarcastic, English")
 
 | Provider | Free tier | Get a key |
 |----------|-----------|-----------|
@@ -45,11 +60,7 @@ Click the extension icon → paste at least one API key:
 | NVIDIA NIM | Dev credits | https://build.nvidia.com |
 | OpenRouter | Some free models | https://openrouter.ai |
 
-Keys are stored in `chrome.storage.local` (Bring-Your-Own-Key; nothing is sent to our servers — there are none).
-
-## Usage
-
-On X or Reddit: right-click any post or comment → **Context Lens: Explain this** or **Context Lens: Who is replying to whom?** The result panel appears top-right.
+🔑 Keys are stored locally in `chrome.storage.local` (Bring-Your-Own-Key). Nothing is sent anywhere except the providers you configure.
 
 ## Development
 
@@ -60,8 +71,11 @@ npm run typecheck  # tsc --noEmit
 npm run build      # production build to dist/
 ```
 
-## Scope (Phase 1)
+## Roadmap
 
-Done: Explain + Thread tasks, X + Reddit adapters (+ generic fallback), context engine with budgeting, provider fallback chain, BYOK popup, result panel.
+- **V0.1 (done)**: Understand, Intent, Thread, Captions, floating ✨ lens, action launcher, visible pipeline, provider health
+- **V0.2**: Argument analysis
+- **V0.3**: Fact checking (claim extraction → search → evidence → verdict)
+- **V0.4**: Deep research
+- **Later**: Facebook/LinkedIn adapters, generic article mode, backend gateway option, Firefox build
 
-Next phases: Facebook-specific adapter, Fact-check / Research / Argument pipelines (search layer), Caption generation, optional backend gateway + local models, Firefox build.
