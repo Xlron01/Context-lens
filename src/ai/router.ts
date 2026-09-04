@@ -83,6 +83,19 @@ export function toLensError(err: unknown): LensError {
 export function summarizeError(msg: string): string {
   const statusMatch = msg.match(/error (\d{3})/);
   const status = statusMatch ? statusMatch[1] : undefined;
+  const generic =
+    status === '429'
+      ? 'Rate limit reached'
+      : status === '401' || status === '403'
+        ? 'Invalid API key'
+        : status === '404'
+          ? 'Model or endpoint not found'
+          : status === '410'
+            ? 'Model retired (Gone)'
+            : status && /^5\d\d$/.test(status)
+              ? 'Provider server error'
+              : undefined;
+
   // Prefer the human-readable field from a JSON error body.
   const jsonStart = msg.indexOf('{');
   if (jsonStart >= 0) {
@@ -94,16 +107,12 @@ export function summarizeError(msg: string): string {
         error?: { message?: unknown };
       };
       const detail = body.detail ?? body.error?.message ?? body.message ?? body.title;
-      if (detail) msg = `${status ? `${status}: ` : ''}${String(detail)}`;
+      if (detail) return `${generic ? `${generic}: ` : ''}${String(detail)}`.slice(0, 200);
     } catch {
-      // not JSON — keep raw
+      // not JSON — fall through
     }
   }
-  if (status === '429') return 'Rate limit reached';
-  if (status === '401' || status === '403') return 'Invalid API key';
-  if (status === '404') return 'Model or endpoint not found';
-  if (status === '410') return 'Model retired (Gone)';
-  if (status && /^5\d\d$/.test(status)) return 'Provider server error';
+  if (generic) return generic;
   return msg.length > 160 ? `${msg.slice(0, 160)}…` : msg;
 }
 
