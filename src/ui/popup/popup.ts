@@ -177,6 +177,17 @@ $('backBtn').addEventListener('click', () => {
 
 $('analyzeCurrent').addEventListener('click', () => void runFromPopup('understand'));
 
+$('selfTest').addEventListener('click', async () => {
+  if (tabId == null) return;
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'SELFTEST' });
+    ($('selfTestHint') as HTMLElement).textContent = 'running in the page — check the panel';
+    setTimeout(() => (($('selfTestHint') as HTMLElement).textContent = 'runs without AI — checks the full pipeline'), 4000);
+  } catch {
+    ($('selfTestHint') as HTMLElement).textContent = '✗ content script unreachable — reload the page';
+  }
+});
+
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
 }

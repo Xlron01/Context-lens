@@ -1,6 +1,22 @@
 import type { CanonicalNode } from '../core/canonical';
 import type { TaskId, CaptionStyle } from '../ai/tasks';
 
+/** Unified error contract — the UI renders exactly this. */
+export interface LensError {
+  code:
+    | 'NO_PROVIDER'
+    | 'PROVIDER_AUTH'
+    | 'PROVIDER_RATE_LIMIT'
+    | 'PROVIDER_UNAVAILABLE'
+    | 'PROVIDER_FAILED'
+    | 'CONTEXT_NOT_FOUND'
+    | 'PARSE_FAILED'
+    | 'PIPELINE_BROKEN';
+  message: string;
+  provider?: string;
+  retryable?: boolean;
+}
+
 /** Content script → background: run an AI task on a resolved context package. */
 export interface RunTaskMessage {
   type: 'RUN_TASK';
@@ -36,8 +52,18 @@ export interface TaskResultMessage {
   ms?: number;
   /** Context indicator shown under the result ("what did the AI see"). */
   contextSummary?: { targetLabel: string; items: string[]; attachments: number; research: string };
-  error?: string;
+  error?: LensError;
   truncated?: boolean;
+}
+
+/** Content → background: deterministic no-AI pipeline check. */
+export interface PingMessage {
+  type: 'PING';
+}
+
+export interface PongMessage {
+  type: 'PONG';
+  at: number;
 }
 
 /** Popup → content script: what can you see on this page? */
