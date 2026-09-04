@@ -79,13 +79,13 @@ export function summarizeError(msg: string): string {
   return msg.length > 120 ? `${msg.slice(0, 120)}…` : msg;
 }
 
-function pickModel(task: TaskId, provider: AIProvider, mode: AiMode): string {
-  if (mode === 'fast') return provider.fastModel;
-  if (mode === 'deep') return provider.defaultModel;
+function pickModel(task: TaskId, provider: AIProvider, mode: AiMode, config?: ProviderConfig): string {
+  const deep = config?.model?.trim() || provider.defaultModel;
+  const fast = config?.fastModel?.trim() || provider.fastModel;
+  if (mode === 'fast') return fast;
+  if (mode === 'deep') return deep;
   // Auto: heavier reasoning tasks get the stronger model.
-  return task === 'thread' || task === 'argument' || task === 'discussion'
-    ? provider.defaultModel
-    : provider.fastModel;
+  return task === 'thread' || task === 'argument' || task === 'discussion' ? deep : fast;
 }
 
 /**
@@ -118,7 +118,7 @@ export async function runTask(
     const config = settings.keys[id];
     if (!provider.isConfigured(config ?? {})) continue;
     attempted++;
-    const model = pickModel(task, provider, settings.aiMode);
+    const model = pickModel(task, provider, settings.aiMode, config);
     try {
       onProgress?.({ kind: 'ask', provider: id, detail: model });
       const res = await provider.complete({ system, user }, config!, model);
@@ -159,7 +159,7 @@ export async function testProvider(id: string, settings: Settings): Promise<{ ok
     await provider.complete(
       { system: 'Reply with the single word: ok', user: 'ping', maxTokens: 512 },
       config!,
-      provider.fastModel,
+      pickModel('understand', provider, 'fast', config),
     );
     return { ok: true, ms: Date.now() - start };
   } catch (err) {
@@ -171,3 +171,48 @@ export async function testProvider(id: string, settings: Settings): Promise<{ ok
 export function providerIds(): string[] {
   return Object.keys(registry);
 }
+
+export interface ProviderInfo {
+  id: string;
+  label: string;
+  baseUrl: string;
+  defaultModel: string;
+  fastModel: string;
+  docsUrl: string;
+}
+
+/** UI-facing provider metadata (defaults shown in Settings, editable there). */
+export const PROVIDER_INFO: ProviderInfo[] = [
+  {
+    id: 'gemini',
+    label: 'Gemini',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    defaultModel: 'gemini-2.0-flash',
+    fastModel: 'gemini-2.0-flash-lite',
+    docsUrl: 'https://aistudio.google.com/apikey',
+  },
+  {
+    id: 'groq',
+    label: 'Groq',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    defaultModel: 'llama-3.3-70b-versatile',
+    fastModel: 'llama-3.1-8b-instant',
+    docsUrl: 'https://console.groq.com/keys',
+  },
+  {
+    id: 'nvidia',
+    label: 'NVIDIA NIM',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    defaultModel: 'meta/llama-3.3-70b-instruct',
+    fastModel: 'meta/llama-3.1-8b-instruct',
+    docsUrl: 'https://build.nvidia.com/explore',
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    defaultModel: 'google/gemini-2.0-flash-exp:free',
+    fastModel: 'google/gemini-2.0-flash-exp:free',
+    docsUrl: 'https://openrouter.ai/models?max_price=0',
+  },
+];

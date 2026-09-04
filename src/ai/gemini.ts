@@ -19,8 +19,9 @@ export class GeminiProvider implements AIProvider {
 
   async complete(req: CompletionRequest, config: ProviderConfig, model: string): Promise<CompletionResponse> {
     if (!config.apiKey) throw new ProviderError('Missing Gemini API key', this.id);
+    const base = (config.baseUrl?.trim() || BASE).replace(/\/+$/, '');
     const res = await fetch(
-      `${BASE}/models/${model}:generateContent?key=${encodeURIComponent(config.apiKey)}`,
+      `${base}/models/${model}:generateContent?key=${encodeURIComponent(config.apiKey)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

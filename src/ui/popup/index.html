@@ -49,14 +49,19 @@
       }
       textarea { resize: vertical; min-height: 48px; }
       .hint { font-size: 11px; color: #777; margin: 2px 0 4px; }
-      .prov { margin-bottom: 10px; padding: 8px; background: #1f1f27; border-radius: 8px; }
+      .prov { margin-bottom: 10px; padding: 10px; background: #1f1f27; border-radius: 8px; }
       .prov .row { display: flex; align-items: center; gap: 6px; }
       .prov .name { flex: 1; font-weight: 600; }
       .prov .status { padding: 0; font-size: 11px; }
       .prov .status.ok { color: #7ee2a8; }
       .prov .status.err { color: #ef9aa8; }
       .prov .status.idle { color: #777; }
-      .prov input { margin-top: 6px; }
+      .prov .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+      .prov .fields .full { grid-column: 1 / -1; }
+      .prov .fields label { font-size: 10px; color: #999; margin: 0 0 2px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+      .prov input { width: 100%; margin-top: 0; }
+      .prov .meta { font-size: 11px; color: #777; margin-top: 6px; }
+      .prov .meta a { color: #8f9ce8; text-decoration: none; }
       button.act {
         background: #33333e; color: #eee; border: 1px solid #44444f; border-radius: 8px;
         padding: 6px 12px; cursor: pointer; font-size: 12px;
@@ -99,6 +104,7 @@
       <div id="providers"></div>
       <button class="act" id="testBtn">Test providers</button>
       <span class="hint" id="testResult"></span>
+      <div class="hint" style="margin-top:6px">Model ids live in each provider's catalog — if a request fails with "model unavailable", copy the exact id from the catalog link in each card.</div>
 
       <h2>AI Mode</h2>
       <div class="modes" id="modes"></div>

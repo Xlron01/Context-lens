@@ -1,6 +1,11 @@
 export interface ProviderConfig {
   apiKey: string;
+  /** Override the API base URL (OpenAI-compatible: base without /chat/completions). */
+  baseUrl?: string;
+  /** Override the deep/default model id from the provider's catalog. */
   model?: string;
+  /** Override the fast model id. */
+  fastModel?: string;
 }
 
 /** Provider request: plain messages. Providers know nothing about tasks. */

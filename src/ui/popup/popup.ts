@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, providerIds, type Settings } from '../../ai/router';
+import { DEFAULT_SETTINGS, PROVIDER_INFO, type Settings } from '../../ai/router';
 import { AI_MODES, CAPTION_STYLES, TASKS, type AiMode, type TaskId } from '../../ai/tasks';
 import type { PageInfoMessage, ProviderHealthMessage } from '../../shared/messages';
 
@@ -71,12 +71,13 @@ function renderLauncher(): void {
 
   // AI status row
   const status = $('status');
-  const configured = providerIds().filter((id) => settings.keys[id]);
-  const chips = providerIds()
-    .map((id) => `<span class="chip ${settings.keys[id] ? 'good' : 'off'}">${id} ${settings.keys[id] ? '✓' : '—'}</span>`)
-    .join('');
+  const chips = PROVIDER_INFO.map(({ id, label }) => {
+    const has = Boolean(settings.keys[id]?.apiKey);
+    return `<span class="chip ${has ? 'good' : 'off'}">${label} ${has ? '✓' : '—'}</span>`;
+  }).join('');
+  const configured = PROVIDER_INFO.filter((p) => settings.keys[p.id]?.apiKey).length;
   status.innerHTML = `<span>AI: ${settings.aiMode}</span>${chips}${
-    configured.length === 0 ? '<span style="color:#eec37e">· add a key in ⚙ Settings</span>' : ''
+    configured === 0 ? '<span style="color:#eec37e">· add a key in ⚙ Settings</span>' : ''
   }`;
 }
 
@@ -89,16 +90,37 @@ async function runFromPopup(task: TaskId): Promise<void> {
 // ---------------- settings view ----------------
 
 function renderSettings(): void {
-  // provider rows
+  // provider cards: key + base URL + deep/fast model ids + docs link
   const wrap = $('providers');
   wrap.innerHTML = '';
-  for (const id of providerIds()) {
-    const key = settings.keys[id]?.apiKey ?? '';
+  for (const p of PROVIDER_INFO) {
+    const cfg = settings.keys[p.id] ?? {};
     const div = document.createElement('div');
     div.className = 'prov';
     div.innerHTML = `
-      <div class="row"><span class="name">${id}</span><span class="status idle" data-status="${id}">—</span></div>
-      <input type="password" data-key="${id}" placeholder="API key" value="${escapeHtml(key)}" />`;
+      <div class="row">
+        <span class="name">${p.label}</span>
+        <span class="status idle" data-status="${p.id}">—</span>
+      </div>
+      <div class="fields">
+        <div class="full">
+          <label>API key</label>
+          <input type="password" data-key="${p.id}" placeholder="Paste your ${p.label} key" value="${escapeHtml(cfg.apiKey ?? '')}" />
+        </div>
+        <div class="full">
+          <label>Base URL</label>
+          <input type="text" data-baseurl="${p.id}" placeholder="${escapeHtml(p.baseUrl)}" value="${escapeHtml(cfg.baseUrl ?? '')}" />
+        </div>
+        <div>
+          <label>Model (deep)</label>
+          <input type="text" data-model="${p.id}" placeholder="${escapeHtml(p.defaultModel)}" value="${escapeHtml(cfg.model ?? '')}" />
+        </div>
+        <div>
+          <label>Model (fast)</label>
+          <input type="text" data-fastmodel="${p.id}" placeholder="${escapeHtml(p.fastModel)}" value="${escapeHtml(cfg.fastModel ?? '')}" />
+        </div>
+      </div>
+      <div class="meta">Key &amp; model ids: <a href="${p.docsUrl}" target="_blank" rel="noreferrer">${p.docsUrl.replace(/^https:\/\//, '')}</a> — leave fields empty to use the defaults.</div>`;
     wrap.append(div);
   }
 
@@ -123,9 +145,18 @@ function renderSettings(): void {
 
 $('save').addEventListener('click', async () => {
   settings.keys = {};
-  for (const input of document.querySelectorAll<HTMLInputElement>('input[data-key]')) {
-    const v = input.value.trim();
-    if (v) settings.keys[input.dataset.key!] = { apiKey: v };
+  for (const p of PROVIDER_INFO) {
+    const key = (document.querySelector(`input[data-key="${p.id}"]`) as HTMLInputElement | null)?.value.trim() ?? '';
+    if (!key) continue;
+    const baseUrl = (document.querySelector(`input[data-baseurl="${p.id}"]`) as HTMLInputElement).value.trim();
+    const model = (document.querySelector(`input[data-model="${p.id}"]`) as HTMLInputElement).value.trim();
+    const fastModel = (document.querySelector(`input[data-fastmodel="${p.id}"]`) as HTMLInputElement).value.trim();
+    settings.keys[p.id] = {
+      apiKey: key,
+      baseUrl: baseUrl || undefined,
+      model: model || undefined,
+      fastModel: fastModel || undefined,
+    };
   }
   settings.aiMode = (document.querySelector('input[name="aiMode"]:checked') as HTMLInputElement)?.value as AiMode;
   settings.captionStyle = ($('captionStyle') as HTMLSelectElement).value as Settings['captionStyle'];
