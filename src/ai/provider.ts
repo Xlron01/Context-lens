@@ -37,6 +37,8 @@ export const COMPLETION_SCHEMA = {
 export interface CompletionResult {
   headline: string;
   sections: { title: string; body: string; confidence: 'observed' | 'inference' | 'speculation' }[];
+  /** Present for caption tasks. */
+  captions?: string[];
   provider: string;
   model: string;
 }
@@ -64,6 +66,7 @@ export class ProviderError extends Error {
 export function parseStructured(raw: string): {
   headline: string;
   sections: { title: string; body: string; confidence: 'observed' | 'inference' | 'speculation' }[];
+  captions?: string[];
 } {
   const cleaned = raw
     .replace(/^```(?:json)?\s*/i, '')
@@ -73,7 +76,7 @@ export function parseStructured(raw: string): {
   const end = cleaned.lastIndexOf('}');
   const json = start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
   const parsed = JSON.parse(json);
-  return {
+  const result: ReturnType<typeof parseStructured> = {
     headline: String(parsed.headline ?? ''),
     sections: Array.isArray(parsed.sections)
       ? parsed.sections.map((s: Record<string, unknown>) => ({
@@ -86,4 +89,8 @@ export function parseStructured(raw: string): {
         }))
       : [],
   };
+  if (Array.isArray(parsed.captions)) {
+    result.captions = parsed.captions.map((c: unknown) => String(c)).filter((c: string) => c.trim());
+  }
+  return result;
 }

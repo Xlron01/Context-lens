@@ -20,6 +20,10 @@ export interface ContextItem {
 
 export interface ResolveOptions {
   tokenBudget?: number;
+  /** 'minimal' = target + root post only (caption/repost tasks). Default 'standard'. */
+  depth?: 'minimal' | 'standard';
+  includeParent?: boolean;
+  includeReplies?: boolean;
 }
 
 /**
@@ -38,14 +42,27 @@ export function resolveContext(
   const target = graph.get(targetId);
   if (!target) return null;
 
+  const { depth = 'standard', includeParent = true, includeReplies = true } = opts;
   const raw: ContextItem[] = [];
 
-  // L1: direct parent and root post.
   const chain = graph.ancestorChain(targetId);
   const parent = chain[chain.length - 1];
-  if (parent) raw.push({ label: 'Direct parent', node: parent });
-
   const root = graph.rootOf(targetId);
+
+  if (depth === 'minimal') {
+    // Caption-style tasks: the post itself and almost nothing else.
+    if (root && root.id !== targetId) raw.push({ label: 'Root post', node: root });
+    const { items, truncated } = budgetPackage(
+      target,
+      raw,
+      opts.tokenBudget ?? DEFAULT_TOKEN_BUDGET,
+    );
+    return { platform, pageUrl, pageTitle, target, items, truncated };
+  }
+
+  // L1: direct parent and root post.
+  if (includeParent && parent) raw.push({ label: 'Direct parent', node: parent });
+
   if (root && root.id !== parent?.id && root.id !== targetId) {
     raw.push({ label: 'Root post', node: root });
   }
@@ -55,12 +72,14 @@ export function resolveContext(
   }
 
   // L2: replies to the target and conversation around the parent.
-  for (const r of graph.replies(targetId).slice(0, 10)) {
-    raw.push({ label: 'Reply to target', node: r });
-  }
-  if (parent) {
-    for (const s of graph.siblings(targetId).slice(0, 5)) {
-      raw.push({ label: 'Sibling reply', node: s });
+  if (includeReplies) {
+    for (const r of graph.replies(targetId).slice(0, 10)) {
+      raw.push({ label: 'Reply to target', node: r });
+    }
+    if (parent) {
+      for (const s of graph.siblings(targetId).slice(0, 5)) {
+        raw.push({ label: 'Sibling reply', node: s });
+      }
     }
   }
 
