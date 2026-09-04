@@ -81,17 +81,29 @@ function ensurePanel(): { host: HTMLElement; panel: HTMLElement; body: HTMLEleme
     const style = document.createElement('style');
     style.textContent = CSS;
     shadow.appendChild(style);
-    const panel = document.createElement('div');
-    panel.className = 'panel';
-    shadow.appendChild(panel);
+
+    // Full structure: panel > head(title + close) + body(scroll area).
+    const panelEl = document.createElement('div');
+    panelEl.className = 'panel';
+
+    const head = document.createElement('div');
+    head.className = 'head';
+    const title = document.createElement('h3');
+    title.textContent = 'Context Lens';
+    const close = document.createElement('button');
+    close.className = 'close';
+    close.textContent = '✕';
+    close.onclick = () => host?.remove();
+    head.append(title, close);
+
+    const body = document.createElement('div');
+    body.className = 'body';
+
+    panelEl.append(head, body);
+    shadow.appendChild(panelEl);
   }
   const shadow = host.shadowRoot!;
-  let panel = shadow.querySelector('.panel') as HTMLElement;
-  if (!panel) {
-    panel = document.createElement('div');
-    panel.className = 'panel';
-    shadow.appendChild(panel);
-  }
+  const panel = shadow.querySelector('.panel') as HTMLElement;
   return {
     host,
     panel,
@@ -107,6 +119,8 @@ export interface PanelUi {
   renderResult(msg: TaskResultMessage): void;
   renderCaptionChooser(onPick: (style: CaptionStyle) => void): void;
   renderCaptions(captions: string[], onMore: () => void): void;
+  /** Show the exact context package that was (or would be) sent to the model. */
+  renderContextPackage(text: string): void;
 }
 
 export function createPanel(): PanelUi {
@@ -152,7 +166,12 @@ export function createPanel(): PanelUi {
       if (!msg.ok) {
         const err = document.createElement('p');
         err.className = 'error';
-        err.textContent = `✗ ${msg.error ?? 'Unknown error.'}`;
+        const e = msg.error as { code?: string; message?: string } | string | undefined;
+        const text =
+          typeof e === 'object' && e !== null
+            ? `[${e.code}] ${e.message ?? ''}`
+            : (e as string) ?? 'Unknown error.';
+        err.textContent = `✗ ${text}`;
         body.append(err);
         return;
       }
@@ -260,6 +279,20 @@ export function createPanel(): PanelUi {
         grid.append(btn);
       }
       body.append(grid);
+    },
+    renderContextPackage(text: string) {
+      const { body } = ensurePanel();
+      const details = document.createElement('details');
+      details.style.marginTop = '8px';
+      const summary = document.createElement('summary');
+      summary.textContent = '🐞 View context package';
+      summary.style.cssText = 'cursor:pointer;font-size:12px;color:#999;';
+      const pre = document.createElement('pre');
+      pre.style.cssText =
+        'max-height:260px;overflow:auto;background:#151519;border:1px solid #33333e;border-radius:8px;padding:8px;font-size:11px;white-space:pre-wrap;color:#bbb;';
+      pre.textContent = text;
+      details.append(summary, pre);
+      body.append(details);
     },
     renderCaptions(captions: string[], onMore: () => void) {
       const { body } = ensurePanel();
