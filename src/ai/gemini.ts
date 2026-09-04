@@ -1,10 +1,8 @@
 import {
-  COMPLETION_SCHEMA,
-  parseStructured,
   ProviderError,
   type AIProvider,
   type CompletionRequest,
-  type CompletionResult,
+  type CompletionResponse,
   type ProviderConfig,
 } from './provider';
 
@@ -19,7 +17,7 @@ export class GeminiProvider implements AIProvider {
     return Boolean(config.apiKey);
   }
 
-  async complete(req: CompletionRequest, config: ProviderConfig, model: string): Promise<CompletionResult> {
+  async complete(req: CompletionRequest, config: ProviderConfig, model: string): Promise<CompletionResponse> {
     if (!config.apiKey) throw new ProviderError('Missing Gemini API key', this.id);
     const res = await fetch(
       `${BASE}/models/${model}:generateContent?key=${encodeURIComponent(config.apiKey)}`,
@@ -42,6 +40,6 @@ export class GeminiProvider implements AIProvider {
     const data = await res.json();
     const raw: string = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('') ?? '';
     if (!raw) throw new ProviderError('Empty Gemini response', this.id);
-    return { ...parseStructured(raw), provider: this.id, model };
+    return { raw, provider: this.id, model };
   }
 }

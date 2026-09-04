@@ -1,10 +1,8 @@
 import {
-  COMPLETION_SCHEMA,
-  parseStructured,
   ProviderError,
   type AIProvider,
   type CompletionRequest,
-  type CompletionResult,
+  type CompletionResponse,
   type ProviderConfig,
 } from './provider';
 
@@ -38,7 +36,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     return Boolean(config.apiKey);
   }
 
-  async complete(req: CompletionRequest, config: ProviderConfig, model: string): Promise<CompletionResult> {
+  async complete(req: CompletionRequest, config: ProviderConfig, model: string): Promise<CompletionResponse> {
     if (!config.apiKey) throw new ProviderError(`Missing ${this.id} API key`, this.id);
     const res = await fetch(this.endpoint, {
       method: 'POST',
@@ -62,7 +60,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     const data = await res.json();
     const raw: string = data?.choices?.[0]?.message?.content ?? '';
     if (!raw) throw new ProviderError(`Empty ${this.id} response`, this.id);
-    return { ...parseStructured(raw), provider: this.id, model };
+    return { raw, provider: this.id, model };
   }
 }
 

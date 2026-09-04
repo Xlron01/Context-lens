@@ -1,7 +1,8 @@
-import { runTask, testProvider, DEFAULT_SETTINGS, type Settings } from '../ai/router';
+import { runTask, testProvider, DEFAULT_SETTINGS, toLensError, type Settings } from '../ai/router';
 import { providerIds } from '../ai/router';
 import type {
   ContentToBackground,
+  LensError,
   ProviderHealthMessage,
   RunTaskMessage,
   TaskResultMessage,
@@ -18,6 +19,14 @@ async function loadSettings(): Promise<Settings> {
   const stored = await chrome.storage.local.get(['settings']);
   return { ...DEFAULT_SETTINGS, ...(stored.settings as Partial<Settings> | undefined) };
 }
+
+// Deterministic connectivity check used by the 🧪 self-test (no AI involved).
+chrome.runtime.onMessage.addListener((msg: ContentToBackground, _sender, sendResponse) => {
+  if ((msg as { type?: string }).type === 'PING') {
+    sendResponse({ type: 'PONG', at: Date.now() });
+  }
+  return false;
+});
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
@@ -107,7 +116,11 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender, sendResp
       };
       sendResponse(resp);
     } catch (err) {
-      sendResponse({ type: 'TASK_RESULT', ok: false, task: run.task, error: err instanceof Error ? err.message : String(err) });
+      const lensError: LensError =
+        (err as LensError)?.code !== undefined
+          ? (err as LensError)
+          : toLensError(err);
+      sendResponse({ type: 'TASK_RESULT', ok: false, task: run.task, error: lensError });
     }
   })();
 
