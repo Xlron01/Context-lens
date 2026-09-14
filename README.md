@@ -2,6 +2,8 @@
 
 A browser extension that helps you understand posts, comments, and threads **in context** — a lens over the page you're already reading, not another app to learn.
 
+Built in TypeScript (Vite + `@crxjs`), tested with **vitest** (adapters / context engine / AI layer — see `tests/`), BYOK multi-provider AI with automatic fallback: Gemini → Groq → NVIDIA → OpenRouter. No accounts, no telemetry — your keys stay in the extension.
+
 ## Interaction model
 
 Four ways in, no workflow to memorize:
